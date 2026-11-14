@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "leaflet/dist/leaflet.css";
 
 @layer base {
   :root {
@@ -18,6 +17,7 @@
     --sf-crowd-coral: #ef4444;
     --sf-crowd-coral-light: #fee2e2;
     --sf-urgent-red: #dc2626;
+    --sf-urgent-orange: #FF5F15;
     --sf-glass: rgba(255, 255, 255, 0.86);
     --sf-glass-strong: rgba(255, 255, 255, 0.94);
     --sf-glass-border: rgba(255, 255, 255, 0.72);
@@ -58,23 +58,6 @@
   box-shadow: 0 10px 32px rgba(15, 23, 42, 0.11);
 }
 
-/* Urgent Need Pulse */
-@keyframes urgentRing {
-  0% {
-    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
-  }
-  70% {
-    box-shadow: 0 0 0 12px rgba(220, 38, 38, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
-  }
-}
-
-.urgent-pulse {
-  animation: urgentRing 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
 @keyframes markerPing {
   0% {
     transform: scale(0.9);
@@ -92,7 +75,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .urgent-pulse,
   .marker-ping {
     animation: none;
   }
@@ -120,28 +102,4 @@
 .sf-scroll-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;
-}
-
-/* Leaflet map container styling & crisp vector fallback grid */
-.leaflet-container {
-  font-family: 'Outfit', sans-serif;
-  background-color: #e8f1fb;
-  background-image:
-    linear-gradient(to right, rgba(2, 132, 199, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(2, 132, 199, 0.06) 1px, transparent 1px);
-  background-size: 36px 36px;
-}
-
-.leaflet-control-attribution {
-  font-size: 10px !important;
-  background: rgba(255, 255, 255, 0.72) !important;
-  backdrop-filter: blur(8px);
-  border-top-left-radius: 8px;
-  padding: 2px 6px !important;
-  color: #3f4850 !important;
-}
-
-.sf-div-icon {
-  background: transparent !important;
-  border: none !important;
 }

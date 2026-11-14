@@ -1,8 +1,23 @@
 import React, { useEffect, useRef } from 'react';
-import L from 'leaflet';
-import { LocateFixed, Minus, Plus } from 'lucide-react';
+import {
+  AdvancedMarker,
+  APILoadingStatus,
+  APIProvider,
+  Map as GoogleMap,
+  useApiLoadingStatus,
+  useMap,
+  useMapsLibrary,
+} from '@vis.gl/react-google-maps';
+import { LocateFixed, MapPin, Minus, Plus } from 'lucide-react';
 import { Facility, FacilityKind, UserPosition } from '../types/facility';
 import { FountainPinGraphic } from './FacilityVisuals';
+
+const GOOGLE_MAPS_API_KEY =
+  import.meta.env.VITE_GOOGLE_MAPS_API_KEY ||
+  (typeof __GOOGLE_MAPS_API_KEY__ !== 'undefined'
+    ? __GOOGLE_MAPS_API_KEY__
+    : '') ||
+  '';
 
 interface SingaporeMapProps {
   facilities: Facility[];
@@ -19,84 +34,286 @@ interface SingaporeMapProps {
   onRecenter: () => void;
 }
 
-function getMarkerHtml(
-  facility: Facility,
-  isSelected: boolean,
-  isRouteTarget: boolean,
-  urgentMode: boolean
-): string {
+const MapStatusMonitor: React.FC = () => {
+  const status = useApiLoadingStatus();
+
+  useEffect(() => {
+    if (
+      status === APILoadingStatus.AUTH_FAILURE ||
+      status === APILoadingStatus.FAILED
+    ) {
+      window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+    }
+  }, [status]);
+
+  return null;
+};
+
+interface MapControllerProps {
+  userPosition: UserPosition;
+  selectedFacility: Facility | null;
+  routeFacility: Facility | null;
+  mapRefOut: React.MutableRefObject<google.maps.Map | null>;
+}
+
+const MapController: React.FC<MapControllerProps> = ({
+  userPosition,
+  selectedFacility,
+  routeFacility,
+  mapRefOut,
+}) => {
+  const map = useMap();
+
+  useEffect(() => {
+    mapRefOut.current = map;
+  }, [map, mapRefOut]);
+
+  useEffect(() => {
+    if (!map) return;
+    map.panTo({ lat: userPosition.lat, lng: userPosition.lng });
+  }, [map, userPosition.lat, userPosition.lng]);
+
+  useEffect(() => {
+    if (!map || !selectedFacility || routeFacility) return;
+    map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+  }, [map, selectedFacility, routeFacility]);
+
+  return null;
+};
+
+const SearchRadiusCircle: React.FC<{
+  center: { lat: number; lng: number };
+  radiusMeters: number;
+  urgentMode: boolean;
+}> = ({ center, radiusMeters, urgentMode }) => {
+  const map = useMap();
+  const circleRef = useRef<google.maps.Circle | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    if (!circleRef.current) {
+      circleRef.current = new google.maps.Circle({
+        map,
+        center,
+        radius: radiusMeters,
+        clickable: false,
+        strokeColor: urgentMode ? '#FF5F15' : '#0284c7',
+        strokeOpacity: 0.65,
+        strokeWeight: 2,
+        fillColor: urgentMode ? '#FF5F15' : '#0ea5e9',
+        fillOpacity: 0.08,
+      });
+    } else {
+      circleRef.current.setCenter(center);
+      circleRef.current.setRadius(radiusMeters);
+      circleRef.current.setOptions({
+        strokeColor: urgentMode ? '#FF5F15' : '#0284c7',
+        fillColor: urgentMode ? '#FF5F15' : '#0ea5e9',
+      });
+    }
+
+    return () => {
+      if (circleRef.current) {
+        circleRef.current.setMap(null);
+        circleRef.current = null;
+      }
+    };
+  }, [map, center.lat, center.lng, radiusMeters, urgentMode]);
+
+  return null;
+};
+
+const WalkingRouteOverlay: React.FC<{
+  origin: { lat: number; lng: number };
+  destination: Facility | null;
+  urgentMode: boolean;
+}> = ({ origin, destination, urgentMode }) => {
+  const map = useMap();
+  const routesLib = useMapsLibrary('routes');
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+
+  useEffect(() => {
+    const clearPolylines = () => {
+      polylinesRef.current.forEach((p) => p.setMap(null));
+      polylinesRef.current = [];
+    };
+
+    clearPolylines();
+    if (!map || !destination) return;
+
+    let cancelled = false;
+    const strokeColor = urgentMode ? '#FF5F15' : '#0284c7';
+
+    // Immediate direct dashed polyline so navigation feedback is instant
+    const fallbackLine = new google.maps.Polyline({
+      map,
+      path: [
+        { lat: origin.lat, lng: origin.lng },
+        { lat: destination.lat, lng: destination.lng },
+      ],
+      geodesic: true,
+      strokeColor,
+      strokeOpacity: 0,
+      icons: [
+        {
+          icon: {
+            path: 'M 0,-1 0,1',
+            strokeOpacity: 0.9,
+            strokeWeight: urgentMode ? 5 : 4,
+            scale: 3,
+          },
+          offset: '0',
+          repeat: '14px',
+        },
+      ],
+    });
+    polylinesRef.current = [fallbackLine];
+
+    const bounds = new google.maps.LatLngBounds();
+    bounds.extend({ lat: origin.lat, lng: origin.lng });
+    bounds.extend({ lat: destination.lat, lng: destination.lng });
+    map.fitBounds(bounds, { top: 190, bottom: 190, left: 48, right: 48 });
+
+    // Upgrade to road/sidewalk walking path via modern Routes API SDK wrapper
+    if (routesLib?.Route) {
+      routesLib.Route.computeRoutes({
+        origin: { lat: origin.lat, lng: origin.lng },
+        destination: { lat: destination.lat, lng: destination.lng },
+        travelMode: routesLib.TravelMode.WALKING,
+        fields: ['path', 'viewport'],
+      })
+        .then((res) => {
+          if (cancelled) return;
+          const route = res.routes?.[0];
+          if (!route) return;
+
+          clearPolylines();
+          const created = route.createPolylines({
+            polylineOptions: {
+              strokeColor,
+              strokeOpacity: 0.92,
+              strokeWeight: urgentMode ? 6 : 5,
+            },
+          });
+          created.forEach((p) => p.setMap(map));
+          polylinesRef.current = created;
+
+          if (route.viewport) {
+            map.fitBounds(route.viewport, {
+              top: 190,
+              bottom: 190,
+              left: 48,
+              right: 48,
+            });
+          }
+        })
+        .catch((err) => {
+          const msg = String(err ?? '');
+          if (
+            msg.includes('429') ||
+            msg.includes('OVER_QUERY_LIMIT') ||
+            msg.includes('RESOURCE_EXHAUSTED') ||
+            msg.toLowerCase().includes('quota')
+          ) {
+            window.dispatchEvent(new CustomEvent('gmp-quota-exceeded'));
+          }
+          // Keep direct dashed polyline rendered on fallback
+        });
+    }
+
+    return () => {
+      cancelled = true;
+      clearPolylines();
+    };
+  }, [
+    map,
+    routesLib,
+    origin.lat,
+    origin.lng,
+    destination?.id,
+    destination?.lat,
+    destination?.lng,
+    urgentMode,
+  ]);
+
+  return null;
+};
+
+const FacilityMarkerBadge: React.FC<{
+  facility: Facility;
+  isSelected: boolean;
+  isRouteTarget: boolean;
+  urgentMode: boolean;
+}> = ({ facility, isSelected, isRouteTarget, urgentMode }) => {
   const isUrgentTarget = urgentMode && isRouteTarget;
-  const size = isSelected || isRouteTarget ? 42 : 34;
+  const active = isSelected || isRouteTarget;
+  const sizeClass = active ? 'w-11 h-11 scale-110' : 'w-9 h-9';
 
   if (facility.kind === 'fountain') {
-    return `
-      <div class="relative flex items-center justify-center" style="width:${size}px;height:${size}px;">
-        ${
-          isSelected || isRouteTarget
-            ? `<span class="marker-ping absolute inset-0 rounded-full bg-[#0ea5e9]/35"></span>`
-            : ''
-        }
-        <div class="relative flex items-center justify-center rounded-full bg-white shadow-md border-2 ${
-          isSelected ? 'border-[#0284c7] scale-110' : 'border-[#0ea5e9]/80'
-        } transition-transform duration-150" style="width:${size}px;height:${size}px;">
-          <img
-            src="https://sgtoilets.web.app/fountain-pin.svg"
-            alt="Water fountain"
-            referrerpolicy="no-referrer"
-            style="width:20px;height:20px;object-fit:contain;"
-            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
-          />
-          <span style="display:none;align-items:center;justify-content:center;color:#0284c7;font-size:14px;font-weight:700;">💧</span>
+    return (
+      <div className={`relative flex items-center justify-center ${sizeClass}`}>
+        {active && (
+          <span className="marker-ping absolute inset-0 rounded-full bg-[#0ea5e9]/35" />
+        )}
+        <div
+          className={`relative w-full h-full rounded-full bg-white shadow-md border-2 flex items-center justify-center transition-transform ${
+            isSelected ? 'border-[#0284c7]' : 'border-[#0ea5e9]/80'
+          }`}
+        >
+          <FountainPinGraphic className="w-5 h-5" />
         </div>
       </div>
-    `;
+    );
   }
 
-  const bg = isUrgentTarget
-    ? '#dc2626'
+  const bgClass = isUrgentTarget
+    ? 'bg-[#FF5F15]'
     : facility.queueStatus === 'busy'
-      ? '#f59e0b'
+      ? 'bg-[#f59e0b]'
       : facility.verifiedClean && facility.amenities.free
-        ? '#0284c7'
-        : '#006194';
+        ? 'bg-[#0284c7]'
+        : 'bg-[#006194]';
 
-  const ringColor = isUrgentTarget
-    ? 'rgba(220, 38, 38, 0.4)'
-    : 'rgba(2, 132, 199, 0.35)';
+  const ringClass = isUrgentTarget ? 'bg-[#FF5F15]/35' : 'bg-[#0284c7]/30';
 
-  const badgeDot =
+  const dotClass =
     facility.queueStatus === 'low'
-      ? '#10b981'
+      ? 'bg-[#10b981]'
       : facility.queueStatus === 'moderate'
-        ? '#f59e0b'
-        : '#ef4444';
+        ? 'bg-[#f59e0b]'
+        : 'bg-[#ef4444]';
 
-  return `
-    <div class="relative flex items-center justify-center" style="width:${size}px;height:${size}px;">
-      ${
-        isSelected || isUrgentTarget
-          ? `<span class="marker-ping absolute inset-0 rounded-full" style="background:${ringColor};"></span>`
-          : ''
-      }
+  return (
+    <div className={`relative flex items-center justify-center ${sizeClass}`}>
+      {(isSelected || isUrgentTarget) && (
+        <span className={`marker-ping absolute inset-0 rounded-full ${ringClass}`} />
+      )}
       <div
-        class="relative flex items-center justify-center rounded-full text-white shadow-lg border-2 border-white transition-transform duration-150 ${
-          isSelected || isUrgentTarget ? 'scale-110' : ''
-        }"
-        style="width:${size}px;height:${size}px;background:${bg};box-shadow:0 3px 10px rgba(2,132,199,0.28);"
+        className={`relative w-full h-full rounded-full text-white shadow-lg border-2 border-white flex items-center justify-center transition-transform ${bgClass}`}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7 12h10l-1 8H8l-1-8Z"/>
-          <path d="M8 12V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6"/>
-          <path d="M5 12h14"/>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M7 12h10l-1 8H8l-1-8Z" />
+          <path d="M8 12V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v6" />
+          <path d="M5 12h14" />
         </svg>
         <span
-          class="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
-          style="background:${badgeDot};"
-        ></span>
+          className={`absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${dotClass}`}
+        />
       </div>
     </div>
-  `;
-}
+  );
+};
 
 export const SingaporeMap: React.FC<SingaporeMapProps> = ({
   facilities,
@@ -112,225 +329,147 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
   onUserPositionMove,
   onRecenter,
 }) => {
-  const mapContainerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const userMarkerRef = useRef<L.Marker | null>(null);
-  const radiusCircleRef = useRef<L.Circle | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
-
-  const onSelectFacilityRef = useRef(onSelectFacility);
-  onSelectFacilityRef.current = onSelectFacility;
-
-  const onMapCenterChangeRef = useRef(onMapCenterChange);
-  onMapCenterChangeRef.current = onMapCenterChange;
-
-  const onUserPositionMoveRef = useRef(onUserPositionMove);
-  onUserPositionMoveRef.current = onUserPositionMove;
-
-  // Initialize Leaflet map once
-  useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
-
-    const map = L.map(mapContainerRef.current, {
-      center: [userPosition.lat, userPosition.lng],
-      zoom: 15,
-      zoomControl: false,
-      attributionControl: true,
-    });
-
-    L.tileLayer(
-      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-      {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 19,
-      }
-    ).addTo(map);
-
-    const markersLayer = L.layerGroup().addTo(map);
-
-    map.on('moveend', () => {
-      const center = map.getCenter();
-      onMapCenterChangeRef.current(center.lat, center.lng);
-    });
-
-    mapRef.current = map;
-    markersLayerRef.current = markersLayer;
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      markersLayerRef.current = null;
-    };
-  }, []);
-
-  // Update user marker and search radius circle
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (radiusCircleRef.current) {
-      radiusCircleRef.current.remove();
-    }
-
-    radiusCircleRef.current = L.circle([userPosition.lat, userPosition.lng], {
-      radius: radiusMeters,
-      color: urgentMode ? '#dc2626' : 'rgba(2, 132, 199, 0.5)',
-      weight: urgentMode ? 2 : 1.75,
-      dashArray: '6 8',
-      fillColor: urgentMode ? '#dc2626' : '#0ea5e9',
-      fillOpacity: urgentMode ? 0.05 : 0.06,
-      interactive: false,
-    }).addTo(map);
-
-    if (userMarkerRef.current) {
-      userMarkerRef.current.remove();
-    }
-
-    const userIcon = L.divIcon({
-      className: 'sf-div-icon',
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-      html: `
-        <div class="relative flex items-center justify-center w-7 h-7" title="Your location (drag to simulate walking)">
-          <span class="marker-ping absolute inset-0 rounded-full ${
-            urgentMode ? 'bg-[#dc2626]/35' : 'bg-[#0284c7]/35'
-          }"></span>
-          <span class="relative w-4 h-4 rounded-full border-[3px] border-white shadow-md ${
-            urgentMode ? 'bg-[#dc2626]' : 'bg-[#0284c7]'
-          }"></span>
-        </div>
-      `,
-    });
-
-    const userMarker = L.marker([userPosition.lat, userPosition.lng], {
-      icon: userIcon,
-      draggable: true,
-      zIndexOffset: 900,
-    }).addTo(map);
-
-    userMarker.on('dragend', () => {
-      const pos = userMarker.getLatLng();
-      onUserPositionMoveRef.current(pos.lat, pos.lng);
-    });
-
-    userMarkerRef.current = userMarker;
-  }, [userPosition.lat, userPosition.lng, radiusMeters, urgentMode]);
-
-  // Smooth pan when user switches district preset or GPS
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.panTo([userPosition.lat, userPosition.lng], {
-      animate: true,
-      duration: 0.45,
-    });
-  }, [userPosition.lat, userPosition.lng]);
-
-  // Render facility markers
-  useEffect(() => {
-    const layer = markersLayerRef.current;
-    if (!layer) return;
-
-    layer.clearLayers();
-
-    facilities.forEach((facility) => {
-      const isSelected = selectedFacility?.id === facility.id;
-      const isRouteTarget = routeFacility?.id === facility.id;
-      const size = isSelected || isRouteTarget ? 42 : 34;
-
-      const icon = L.divIcon({
-        className: 'sf-div-icon',
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-        html: getMarkerHtml(facility, isSelected, isRouteTarget, urgentMode),
-      });
-
-      const marker = L.marker([facility.lat, facility.lng], {
-        icon,
-        zIndexOffset: isSelected || isRouteTarget ? 800 : 200,
-      });
-
-      marker.on('click', () => {
-        onSelectFacilityRef.current(facility);
-      });
-
-      marker.addTo(layer);
-    });
-  }, [facilities, selectedFacility, routeFacility, urgentMode]);
-
-  // Draw walking route polyline when navigating or in Urgent Need Mode
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (routeLineRef.current) {
-      routeLineRef.current.remove();
-      routeLineRef.current = null;
-    }
-
-    if (!routeFacility) return;
-
-    const midLat =
-      userPosition.lat + (routeFacility.lat - userPosition.lat) * 0.52;
-    const midLng =
-      userPosition.lng + (routeFacility.lng - userPosition.lng) * 0.45 + 0.00025;
-
-    const points: L.LatLngExpression[] = [
-      [userPosition.lat, userPosition.lng],
-      [midLat, midLng],
-      [routeFacility.lat, routeFacility.lng],
-    ];
-
-    routeLineRef.current = L.polyline(points, {
-      color: urgentMode ? '#dc2626' : '#0284c7',
-      weight: urgentMode ? 5 : 4,
-      opacity: 0.9,
-      dashArray: urgentMode ? undefined : '8 8',
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(map);
-
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, {
-      paddingTopLeft: [40, 185],
-      paddingBottomRight: [40, 180],
-      maxZoom: 17,
-      animate: true,
-    });
-  }, [routeFacility, userPosition.lat, userPosition.lng, urgentMode]);
-
-  // Pan to selected facility gently
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !selectedFacility || routeFacility) return;
-    map.panTo([selectedFacility.lat, selectedFacility.lng], {
-      animate: true,
-      duration: 0.35,
-    });
-  }, [selectedFacility, routeFacility]);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
 
   const radiusLabel =
     radiusMeters >= 1000
       ? `${(radiusMeters / 1000).toFixed(radiusMeters % 1000 === 0 ? 0 : 1)}km radius`
       : `${radiusMeters}m radius`;
 
+  const handleZoom = (delta: number) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const current = map.getZoom() ?? 15;
+    map.setZoom(Math.max(10, Math.min(20, current + delta)));
+  };
+
+  const handleRecenter = () => {
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.panTo({ lat: userPosition.lat, lng: userPosition.lng });
+      map.setZoom(15);
+    }
+    onRecenter();
+  };
+
   return (
-    <div className="relative w-full h-full">
-      <div
-        ref={mapContainerRef}
-        className="w-full h-full"
-        role="application"
-        aria-label="Interactive map of Singapore public restrooms and drinking fountains"
-      />
+    <div className="relative w-full h-full bg-[#e8f1fb]">
+      {GOOGLE_MAPS_API_KEY ? (
+        <APIProvider
+          apiKey={GOOGLE_MAPS_API_KEY}
+          libraries={['marker', 'routes']}
+          language="en"
+          region="SG"
+        >
+          <MapStatusMonitor />
+          <GoogleMap
+            mapId="DEMO_MAP_ID"
+            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
+            defaultCenter={{ lat: userPosition.lat, lng: userPosition.lng }}
+            defaultZoom={15}
+            gestureHandling="greedy"
+            disableDefaultUI={true}
+            clickableIcons={false}
+            className="w-full h-full"
+            style={{ width: '100%', height: '100%' }}
+            onCameraChanged={(ev) => {
+              onMapCenterChange(ev.detail.center.lat, ev.detail.center.lng);
+            }}
+          >
+            <MapController
+              userPosition={userPosition}
+              selectedFacility={selectedFacility}
+              routeFacility={routeFacility}
+              mapRefOut={mapInstanceRef}
+            />
+
+            <SearchRadiusCircle
+              center={{ lat: userPosition.lat, lng: userPosition.lng }}
+              radiusMeters={radiusMeters}
+              urgentMode={urgentMode}
+            />
+
+            <WalkingRouteOverlay
+              origin={{ lat: userPosition.lat, lng: userPosition.lng }}
+              destination={routeFacility}
+              urgentMode={urgentMode}
+            />
+
+            {/* User Location Marker */}
+            <AdvancedMarker
+              position={{ lat: userPosition.lat, lng: userPosition.lng }}
+              draggable={true}
+              zIndex={900}
+              title="Your location (drag to move)"
+              onDragEnd={(e) => {
+                if (e.latLng) {
+                  onUserPositionMove(e.latLng.lat(), e.latLng.lng());
+                }
+              }}
+            >
+              <div className="relative flex items-center justify-center w-7 h-7 cursor-grab active:cursor-grabbing">
+                <span
+                  className={`marker-ping absolute inset-0 rounded-full ${
+                    urgentMode ? 'bg-[#FF5F15]/35' : 'bg-[#0284c7]/35'
+                  }`}
+                />
+                <span
+                  className={`relative w-4 h-4 rounded-full border-[3px] border-white shadow-md ${
+                    urgentMode ? 'bg-[#FF5F15]' : 'bg-[#0284c7]'
+                  }`}
+                />
+              </div>
+            </AdvancedMarker>
+
+            {/* Facility Markers */}
+            {facilities.map((facility) => {
+              const isSelected = selectedFacility?.id === facility.id;
+              const isRouteTarget = routeFacility?.id === facility.id;
+
+              return (
+                <AdvancedMarker
+                  key={facility.id}
+                  position={{ lat: facility.lat, lng: facility.lng }}
+                  zIndex={isSelected || isRouteTarget ? 800 : 200}
+                  title={facility.name}
+                  onClick={() => onSelectFacility(facility)}
+                >
+                  <FacilityMarkerBadge
+                    facility={facility}
+                    isSelected={isSelected}
+                    isRouteTarget={isRouteTarget}
+                    urgentMode={urgentMode}
+                  />
+                </AdvancedMarker>
+              );
+            })}
+          </GoogleMap>
+        </APIProvider>
+      ) : (
+        <div
+          className="w-full h-full flex items-center justify-center p-6"
+          role="region"
+          aria-label="Map configuration notice"
+        >
+          <div className="sf-glass-card rounded-3xl p-6 max-w-sm text-center flex flex-col items-center gap-2">
+            <MapPin className="w-8 h-8 text-[#0284c7]" />
+            <h2 className="text-base font-semibold text-[#111d27]">
+              Google Maps API Key Needed
+            </h2>
+            <p className="text-xs text-[#3f4850] leading-relaxed">
+              Configure <code className="font-semibold">VITE_GOOGLE_MAPS_API_KEY</code>{' '}
+              or enable Google Maps in settings to render the live Singapore map.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Floating Radius Bubble */}
       <div className="pointer-events-none fixed top-[174px] sm:top-[178px] left-1/2 -translate-x-1/2 lg:left-[calc(50%+210px)] z-[420]">
         <div
           className={`rounded-full px-3 py-1 text-xs font-semibold tabular-nums shadow-sm transition-colors ${
             urgentMode
-              ? 'bg-[#dc2626] text-white'
+              ? 'bg-[#FF5F15] text-white'
               : 'sf-glass text-[#006194]'
           }`}
         >
@@ -343,7 +482,8 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
         <div className="pointer-events-none fixed inset-0 lg:left-[420px] z-[450] flex items-center justify-center">
           <div className="relative -translate-y-4 flex flex-col items-center">
             <div className="sf-glass-card rounded-full px-3 py-1 text-xs font-semibold text-[#111d27] mb-2 whitespace-nowrap">
-              Drag map to place {newPinKind === 'fountain' ? 'water fountain' : 'restroom'}
+              Drag map to place{' '}
+              {newPinKind === 'fountain' ? 'water fountain' : 'restroom'}
             </div>
             {newPinKind === 'fountain' ? (
               <div className="w-11 h-11 rounded-full bg-white border-2 border-[#0ea5e9] shadow-lg flex items-center justify-center">
@@ -363,7 +503,7 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
       <div className="fixed right-4 bottom-28 lg:bottom-8 z-[440] flex flex-col gap-2">
         <button
           type="button"
-          onClick={() => mapRef.current?.zoomIn()}
+          onClick={() => handleZoom(1)}
           className="sf-glass w-11 h-11 rounded-full flex items-center justify-center text-[#111d27] hover:bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[#0284c7]"
           aria-label="Zoom in map"
         >
@@ -371,7 +511,7 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => mapRef.current?.zoomOut()}
+          onClick={() => handleZoom(-1)}
           className="sf-glass w-11 h-11 rounded-full flex items-center justify-center text-[#111d27] hover:bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[#0284c7]"
           aria-label="Zoom out map"
         >
@@ -379,12 +519,7 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => {
-            onRecenter();
-            mapRef.current?.setView([userPosition.lat, userPosition.lng], 15, {
-              animate: true,
-            });
-          }}
+          onClick={handleRecenter}
           className="sf-glass w-11 h-11 rounded-full flex items-center justify-center text-[#0284c7] hover:bg-white transition-colors focus-visible:outline-2 focus-visible:outline-[#0284c7]"
           aria-label="Re-center map on your location"
         >
