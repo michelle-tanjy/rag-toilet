@@ -294,7 +294,7 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
 
     const bounds = L.latLngBounds(points);
     map.fitBounds(bounds, {
-      paddingTopLeft: [40, 120],
+      paddingTopLeft: [40, 185],
       paddingBottomRight: [40, 180],
       maxZoom: 17,
       animate: true,
@@ -326,7 +326,7 @@ export const SingaporeMap: React.FC<SingaporeMapProps> = ({
       />
 
       {/* Floating Radius Bubble */}
-      <div className="pointer-events-none fixed top-[134px] sm:top-[126px] left-1/2 -translate-x-1/2 lg:left-[calc(50%+210px)] z-[420]">
+      <div className="pointer-events-none fixed top-[174px] sm:top-[178px] left-1/2 -translate-x-1/2 lg:left-[calc(50%+210px)] z-[420]">
         <div
           className={`rounded-full px-3 py-1 text-xs font-semibold tabular-nums shadow-sm transition-colors ${
             urgentMode

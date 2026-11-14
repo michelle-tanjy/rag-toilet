@@ -74,18 +74,40 @@ export const TopControlZone: React.FC<TopControlZoneProps> = ({
 }) => {
   return (
     <header className="fixed top-0 left-0 right-0 z-[500] p-3 sm:p-4 pointer-events-none">
-      <div className="max-w-7xl mx-auto flex flex-col gap-2.5">
-        {/* Row 1: Floating Search Pill + Urgent Need + Add Pin */}
+      <div className="max-w-7xl mx-auto flex flex-col gap-2">
+        {/* App Header Bar */}
+        <div className="sf-glass h-11 rounded-full px-3.5 sm:px-4 flex items-center justify-between gap-3 pointer-events-auto">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <SgToiletsBrandMark className="w-6 h-6" />
+            <h1 className="text-base sm:text-lg font-bold tracking-tight text-[#111d27] whitespace-nowrap truncate">
+              Toilet Go Where?
+            </h1>
+          </div>
+
+          <button
+            type="button"
+            onClick={onStartAddPin}
+            className={`h-8 px-3 sm:px-3.5 rounded-full font-semibold text-xs inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-transform active:scale-[0.97] ${
+              isAddingPin
+                ? 'bg-[#111d27] text-white'
+                : 'bg-[#e3effd] text-[#006194] hover:bg-[#cce5ff]'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5 shrink-0" />
+            <span>{isAddingPin ? 'Cancel Pin' : 'Add Pin'}</span>
+          </button>
+        </div>
+
+        {/* Row 2: Floating Search Pill + Urgent Need */}
         <div className="flex items-center gap-2 sm:gap-3 pointer-events-auto">
           {/* Integrated Search Pill */}
           <div
-            className={`sf-glass flex-1 min-w-0 h-12 rounded-full px-3 sm:px-4 flex items-center gap-2.5 transition-all ${
-              urgentMode ? 'ring-2 ring-[#dc2626]/40 bg-white/95' : ''
+            className={`sf-glass flex-1 min-w-0 h-12 rounded-full px-3.5 sm:px-4 flex items-center gap-2.5 transition-all ${
+              urgentMode ? 'ring-2 ring-[#FF5F15]/50 bg-white/95' : ''
             }`}
           >
-            <SgToiletsBrandMark className="w-6 h-6" />
             <Search
-              className="w-4 h-4 text-[#707881] shrink-0 hidden sm:block"
+              className="w-4 h-4 text-[#707881] shrink-0"
               aria-hidden="true"
             />
             <input
@@ -136,28 +158,18 @@ export const TopControlZone: React.FC<TopControlZoneProps> = ({
             type="button"
             onClick={onToggleUrgentMode}
             aria-pressed={urgentMode}
-            className={`h-12 px-3.5 sm:px-4 rounded-full font-semibold text-xs sm:text-sm inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-transform active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#dc2626] ${
+            className={`h-12 px-3.5 sm:px-4 rounded-full font-semibold text-xs sm:text-sm inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-all active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF5F15] ${
               urgentMode
-                ? 'bg-[#dc2626] text-white urgent-pulse shadow-lg'
-                : 'bg-[#dc2626] text-white hover:bg-[#b91c1c] shadow-md urgent-pulse'
+                ? 'bg-[#FF5F15] hover:bg-[#E5530D] text-white shadow-md'
+                : 'bg-[#FFE6D9] hover:bg-[#FFD8C4] text-[#8A2B00] shadow-sm'
             }`}
           >
-            <Siren className="w-4 h-4 shrink-0" />
+            <Siren
+              className={`w-4 h-4 shrink-0 ${
+                urgentMode ? 'text-white' : 'text-[#FF5F15]'
+              }`}
+            />
             <span>{urgentMode ? 'Exit Urgent' : 'Urgent Need'}</span>
-          </button>
-
-          {/* Add Pin CTA (desktop & tablet quick access) */}
-          <button
-            type="button"
-            onClick={onStartAddPin}
-            className={`hidden md:inline-flex h-12 px-4 rounded-full font-semibold text-sm items-center gap-1.5 shrink-0 whitespace-nowrap transition-transform active:scale-[0.97] ${
-              isAddingPin
-                ? 'bg-[#111d27] text-white'
-                : 'sf-glass text-[#006194] hover:bg-white'
-            }`}
-          >
-            <Plus className="w-4 h-4 shrink-0" />
-            <span>{isAddingPin ? 'Cancel Pin' : 'Add Pin'}</span>
           </button>
         </div>
 

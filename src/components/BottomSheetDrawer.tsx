@@ -121,8 +121,8 @@ export const BottomSheetDrawer: React.FC<BottomSheetDrawerProps> = ({
   return (
     <aside
       aria-label="Restroom details and nearby directory"
-      className={`fixed z-[480] left-0 right-0 bottom-0 lg:left-4 lg:right-auto lg:top-[126px] lg:bottom-4 lg:w-[416px] transition-all duration-200 ease-out flex flex-col sf-glass-card rounded-t-[1.75rem] lg:rounded-[1.75rem] overflow-hidden ${mobileHeightClass} lg:h-auto ${
-        urgentMode ? 'ring-2 ring-[#dc2626]/35' : ''
+      className={`fixed z-[480] left-0 right-0 bottom-0 lg:left-4 lg:right-auto lg:top-[176px] lg:bottom-4 lg:w-[416px] transition-all duration-200 ease-out flex flex-col sf-glass-card rounded-t-[1.75rem] lg:rounded-[1.75rem] overflow-hidden ${mobileHeightClass} lg:h-auto ${
+        urgentMode ? 'ring-2 ring-[#FF5F15]/40' : ''
       }`}
     >
       {/* Mobile Drag / Tap Snap Handle */}
@@ -247,7 +247,7 @@ export const BottomSheetDrawer: React.FC<BottomSheetDrawerProps> = ({
               <div className="rounded-2xl bg-[#fef2f2] border border-[#dc2626]/30 p-3.5 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[#dc2626]">
-                    <Siren className="w-3.5 h-3.5" />
+                    <Siren className="w-3.5 h-3.5 text-[#FF5F15]" />
                     <span>Nearest Unlocked Facility</span>
                   </div>
                   <p className="text-sm font-semibold text-[#111d27] truncate mt-0.5">

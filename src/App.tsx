@@ -391,7 +391,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-[174px] sm:top-[164px] left-1/2 -translate-x-1/2 lg:left-[calc(50%+210px)] z-[520] pointer-events-none"
+          className="fixed top-[212px] sm:top-[216px] left-1/2 -translate-x-1/2 lg:left-[calc(50%+210px)] z-[520] pointer-events-none"
         >
           <div className="rounded-full bg-[#111d27]/90 text-white px-4 py-1.5 text-xs font-medium shadow-lg whitespace-nowrap">
             {toastMessage}
