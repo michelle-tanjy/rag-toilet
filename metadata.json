@@ -1,0 +1,6 @@
+{
+  "name": "Sanitary Flow",
+  "description": "Clean, mobile-responsive public restroom and drinking fountain navigator across Singapore with live queue telemetry, accessibility filters, and Urgent Need routing.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": []
+}
