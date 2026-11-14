@@ -66,14 +66,6 @@ export default function App() {
     lng: SINGAPORE_DISTRICTS[0].lng,
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
-
-  useEffect(() => {
-    const onQuotaExceeded = () => setQuotaExceeded(true);
-    window.addEventListener('gmp-quota-exceeded', onQuotaExceeded);
-    return () =>
-      window.removeEventListener('gmp-quota-exceeded', onQuotaExceeded);
-  }, []);
 
   useEffect(() => {
     try {
@@ -353,26 +345,6 @@ export default function App() {
 
   return (
     <main className="relative w-full h-full overflow-hidden bg-[#e8f1fb]">
-      {quotaExceeded && (
-        <div
-          role="alert"
-          className="fixed top-0 left-0 right-0 z-[600] bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center shadow-sm"
-        >
-          <span>
-            Google Maps Platform quota reached. If you are the app owner, visit{' '}
-            <a
-              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-semibold text-amber-950 hover:text-amber-800"
-            >
-              maps developer site
-            </a>{' '}
-            for instructions to update your account.
-          </span>
-        </div>
-      )}
-
       {/* Full-Bleed Interactive Singapore Map */}
       <SingaporeMap
         facilities={filteredWithDistance.map((i) => i.facility)}
